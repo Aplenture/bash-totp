@@ -1,9 +1,15 @@
 #!/bin/bash
-# Scott Nicholas <scott@nicholas.one> feb 2018
 
-# TODO:
-# back to the user-selectable width in swab function
-# pad80 the xxtea key if < 128 bit, or sha1 it
+# Aplenture 2024
+# CLI to use TOTP
+# inspried by Scott Nicholas bash-totp
+# see https://github.com/neutronscott/bash-totp
+
+COMMAND=$1
+
+savefile="tokens.save"
+
+tokens=()
 
 # bash3 compat
 if (( ${BASH_VERSINFO[0]} < 4 )); then
@@ -13,6 +19,66 @@ else
   toupper() { printf '%s' "${1^^}"; }
   epoch() { printf '%(%s)T' -1; }
 fi
+
+# xxtea(key, text, d)
+#   key: is hex string of 16 byte (128 bit) length
+#   text: hex-string of arbitrary length
+#   d: anything here means to decrypt instead of encrypt
+xxtea() {
+  local key=$1 text=$2 d=$3 i t hex m=$((0xFFFFFFFF))
+  local v n k z y sum e p q delta=2654435769 #0x9e3779b9
+
+  #make k an array of 32-bit int
+  for ((n = i = 0; i < ${#key}; i += 8)); do
+    k[n++]=$(( 16#${key:i:8} ))
+  done
+  #make v an array of 32-bit int
+  for ((n = i = 0; i < ${#text}; i += 8)); do
+    v[n++]=$(( 16#${text:i:8} ))
+  done
+
+  ((q = 6 + 52/n))
+#  declare -p v k q >&2
+  if [[ -z "$d" ]]; then
+    (( z = v[n-1], sum = 0 ))
+
+    while ((q-- > 0)); do
+      (( sum += delta, e = (sum >> 2) & 3 ))
+      for ((p = 0; p < n - 1; p++)); do
+        ((
+          y = v[p+1], mx = (z>>5^y<<2) + (y>>3^z<<4) ^ (sum^y) + (k[(p&3^e)]^z), z = v[p] = ( v[p] + mx ) & m
+        ))
+      done
+      ((
+        y = v[0], mx = (z>>5^y<<2) + (y>>3^z<<4) ^ (sum^y) + (k[(p&3^e)]^z), z = v[n-1] = ( v[n-1] + mx ) & m
+      ))
+    done
+  else
+    (( sum = (q * delta) & m, y = v[0] ))
+
+    while ((q-- > 0)); do
+      (( e = (sum >> 2) & 3 ))
+      for ((p = n - 1; p > 0; p--)); do
+        ((
+          z = v[p-1], mx = (z>>5^y<<2) + (y>>3^z<<4) ^ (sum^y) + (k[(p&3^e)]^z), y = v[p] = (v[p] - mx) & m
+        ))
+      done
+      ((
+        z = v[n-1], mx = (z>>5^y<<2) + (y>>3^z<<4) ^ (sum^y) + (k[(p&3^e)]^z), y = v[0] = ( v[0] - mx ) & m,
+        sum -= delta
+      ))
+    done
+  fi
+
+#  declare -p v >&2
+  hex=''
+  for ((i = 0; i < ${#v[@]}; i++)); do
+    printf -v h '%08X' "${v[i]}"
+    printf -v hex '%s%s' "$hex" "${h:6:2}${h:4:2}${h:2:2}${h:0:2}" >&2
+  done
+#  printf 'H: %s\n' "$hex" >&2
+  echo "$hex"
+}
 
 swab() {
   local i h hex v=$1
@@ -58,133 +124,6 @@ pad80() {
     printf -v in '%s00' "$in"
   done
   printf '%s\n' "$in"
-}
-
-##########################################################################
-# XXTEA in bash
-# Reference implementation from: https://en.wikipedia.org/wiki/XXTEA 
-##########################################################################
-
-# xxtea(key, text, d)
-#   key: is hex string of 16 byte (128 bit) length
-#   text: hex-string of arbitrary length
-#   d: anything here means to decrypt instead of encrypt
-xxtea() {
-  local key=$1 text=$2 d=$3 i t hex m=$((0xFFFFFFFF))
-  local v n k z y sum e p q delta=2654435769 #0x9e3779b9
-
-  #make k an array of 32-bit int
-  for ((n = i = 0; i < ${#key}; i += 8)); do
-    k[n++]=$(( 16#${key:i:8} ))
-  done
-  #make v an array of 32-bit int
-  for ((n = i = 0; i < ${#text}; i += 8)); do
-    v[n++]=$(( 16#${text:i:8} ))
-  done
-
-  ((q = 6 + 52/n))
-#  declare -p v k q >&2
-  if [[ -z "$d" ]]; then
-    (( z = v[n-1], sum = 0 ))
-
-    while ((q-- > 0)); do
-      (( sum += delta, e = (sum >> 2) & 3 ))
-      for ((p = 0; p < n - 1; p++)); do
-        ((
-          y = v[p+1],
-          mx = (z>>5^y<<2) + (y>>3^z<<4) ^ (sum^y) + (k[(p&3^e)]^z),
-          z = v[p] = ( v[p] + mx ) & m
-        ))
-      done
-      ((
-        y = v[0],
-        mx = (z>>5^y<<2) + (y>>3^z<<4) ^ (sum^y) + (k[(p&3^e)]^z),
-        z = v[n-1] = ( v[n-1] + mx ) & m
-      ))
-    done
-  else
-    (( sum = (q * delta) & m, y = v[0] ))
-
-    while ((q-- > 0)); do
-      (( e = (sum >> 2) & 3 ))
-      for ((p = n - 1; p > 0; p--)); do
-        ((
-          z = v[p-1],
-          mx = (z>>5^y<<2) + (y>>3^z<<4) ^ (sum^y) + (k[(p&3^e)]^z),
-          y = v[p] = (v[p] - mx) & m
-        ))
-      done
-      ((
-        z = v[n-1],
-        mx = (z>>5^y<<2) + (y>>3^z<<4) ^ (sum^y) + (k[(p&3^e)]^z),
-        y = v[0] = ( v[0] - mx ) & m,
-        sum -= delta
-      ))
-    done
-  fi
-
-#  declare -p v >&2
-  hex=''
-  for ((i = 0; i < ${#v[@]}; i++)); do
-    printf -v h '%08X' "${v[i]}"
-    printf -v hex '%s%s' "$hex" "${h:6:2}${h:4:2}${h:2:2}${h:0:2}" >&2
-  done
-#  printf 'H: %s\n' "$hex" >&2
-  echo "$hex"
-}
-
-test_func() {
-  local key plaintext ciphertext enc dec txt
-
-  printf '\nHMAC tests:\n'
-  key=key
-  txt='The quick brown fox jumps over the lazy dog'
-  printf 'HMAC_SHA1  (%s, %s)=%s\n' "$key" "$txt" "$(hmac_sha1   "$(str2hex "$key")" "$(str2hex "$txt")")"
-  printf 'HMAC_SHA1o (%s, %s)=%s\n' "$key" "$txt" "$(hmac_sha1o  "$(str2hex "$key")" "$(str2hex "$txt")")"
-  printf 'HMAC_SHA256(%s, %s)=%s\n' "$key" "$txt" "$(hmac_sha256 "$(str2hex "$key")" "$(str2hex "$txt")")"
-  printf 'HMAC_SHA512(%s, %s)=%s\n' "$key" "$txt" "$(hmac_sha512 "$(str2hex "$key")" "$(str2hex "$txt")")"
-
-  printf '\nTEA tests:\n'
-  while read -r key plaintext ciphertext; do
-    key=$(swab "$key")
-    plaintext=$(swab "$plaintext")
-    enc=$(xxtea "$key" "$plaintext")
-    dec=$(xxtea "$key" "$(swab "$enc")" d)
-    txt=$(hex2str "$dec")
-    printf 'Plaintext[%s] Encrypted[%s] Expected[%s] Decrypted[%s] Text[%q]\n' "$plaintext" "$enc" "$(toupper "$ciphertext")" "$dec" "$txt"
-  done << EOF
-00000000000000000000000000000000 0000000000000000 ab043705808c5d57
-0102040810204080fffefcf8f0e0c080 0000000000000000 d1e78be2c746728a
-9e3779b99b9773e9b979379e6b695156 ffffffffffffffff 67ed0ea8e8973fc5
-0102040810204080fffefcf8f0e0c080 fffefcf8f0e0c080 8c3707c01c7fccc4
-74657374746573747465737474657374 7465737474657374 F11330C52AAE7923
-5baa61e4c9b93f3f0682250b6cf8331b $(str2hex "Hello World!" 8) 9E5CFC488DD42033C29F20C3
-EOF
-}
-
-do_tea() {
-  local pass sha1 key ans line
-
-  read -rs -p 'Passphrase: ' pass < /dev/tty
-  sha1=$(sha1 "$(str2hex "$pass")")
-  key=${sha1:0:32}
-  printf '\nKey: %s\n' "$key"
-  read -r -p '(e)ncrypt / (d)ecrypt: ' ans
-  case $ans in
-    e)
-      printf 'End with "." alone on last line\n'
-      while read -r line; do
-        [[ $line = '.' ]] && break
-        input+=$line$'\n'
-      done
-      xxtea "$(swab "$key")" "$(swab "$(str2hex "$input" 8)")"
-      ;;
-    d)
-      printf 'Expecting single line of HEX\n'
-      read -r input
-      hex2str "$(xxtea "$(swab "$key")" "$(swab "$input")" d)"
-      ;;
-  esac
 }
 
 hmac_sha512() { printf %s "$2" | xxd -r -p | openssl dgst -sha512 -mac hmac -macopt hexkey:$1 | cut -f2 -d' '; }
@@ -265,10 +204,6 @@ sha1() {
   printf '%08x%08x%08x%08x%08x\n' "$h0" "$h1" "$h2" "$h3" "$h4"
 }
 
-##########################################################################
-# TOTP in bash
-##########################################################################
-
 # totp(key, hash[, step[, digits]])
 #    key: hex encoded
 #   step: usually 30 seconds
@@ -315,66 +250,92 @@ base32d() {
   printf '%s\n' "$hex"
 }
 
-##########################################################################
-# main..?
-##########################################################################
-
-savefile="tokens.save"
-
 add_token() {
-  read -r -p 'Issuer: ' issuer
-  read -r -p 'Base32 secret: ' secret
-  read -r -p 'Period: ' period
-  read -r -p 'Digits (6 or 8): ' digits
-  tokens+=( "$issuer" "$secret" "$period" "$digits" )
-}
+  issuer=$1
 
-save_tokens() {
-  local key txt enc
+  if [ -z "${issuer}" ]; then
+      echo "issuer is unset or set to the empty string"
+      exit -1
+  fi
 
-  read -r -p 'Encryption key: ' key
-  key=$(sha1 "$(str2hex "$key")")
-  key=$(swab "${key:0:128}")
-  txt=$(swab "$(str2hex "$(declare -p tokens)")")
-  enc=$(xxtea "$key" "$txt")
-  printf '%s\n' "$enc" > "$savefile"
+  secret=$2
+
+  if [ -z "${secret}" ]; then
+      echo "secret is unset or set to the empty string"
+      exit -1
+  fi
+
+  hash=$3
+
+  if [ -z "${hash}" ]; then
+      hash="sha1"
+  fi
+
+  period=$4
+
+  if [ -z "${period}" ]; then
+      period="30"
+  fi
+  
+  digits=$5
+
+  if [ -z "${digits}" ]; then
+      digits="6"
+  fi
+  
+  tokens+=( "$issuer" "$secret" "$hash" "$period" "$digits" )
 }
 
 load_tokens() {
-  local key txt dec
-  read -r -p 'Encryption key: ' key
-  key=$(sha1 "$(str2hex "$key")")
-  key=$(swab "${key:0:128}")
-  read -r -p 'Ciphertext(HEX): ' txt < "$savefile" 
-  dec=$(xxtea "$key" "$(swab "$txt")" d)
-  [[ $dec = 6465636C617265* ]] || {
-    printf 'Unable to decrypt. Check key.\n' >&2
-    return 1
-  }
-  printf '%s\n' "$dec"
+  if [ -e $savefile ]; then
+    read -r -p 'Ciphertext(HEX): ' txt < "$savefile" 
+
+    while IFS= read -r line; do
+      tokens+=($line)
+    done < $savefile
+  fi
 }
 
-# test again https://blog.dataforce.org.uk/2019/03/fun-with-totp-codes/demo/
-tokens=(
-  "sha1"   "SECRETCODE" sha1   30 6
-  "sha1o"  "SECRETCODE" sha1o  30 6
-  "sha256" "SECRETCODE" sha256 30 6
-  "sha512" "SECRETCODE" sha512 30 6
-)
+save_tokens() {
+  txt=""
 
-while :; do
   for ((i = 0; i < ${#tokens[@]}; i += 5)); do
-    printf '%16s %8s\n' "${tokens[i]}" "$(totp "$(base32d "${tokens[i+1]}")" "${tokens[i+2]}" "${tokens[i+3]}" "${tokens[i+4]}")"
+    txt="${txt}${tokens[i]} ${tokens[i+1]} ${tokens[i+2]} ${tokens[i+3]} ${tokens[i+4]}\n"
   done
-  printf '(A)dd (D)el (S)ave (L)oad (T)est (X)XTEA (Q)uit: '
-  read -r ans
-  case $ans in
-    A*|a*) add_token ;;
-    D*|d*) del_token ;;
-    S*|s*) save_tokens ;;
-    L*|l*) load_tokens ;;
-    T*|t*) test_func ;;
-    X*|x*) do_tea ;;
-    Q*|q*) exit 0 ;;
-  esac
-done
+
+  printf "$txt" > "$savefile"
+}
+
+print_tokens() {
+  issuer=$1
+
+  for ((i = 0; i < ${#tokens[@]}; i += 5)); do
+    if [ -z "${issuer}" ]; then
+      printf '%16s %8s\n' "${tokens[i]}" "$(totp "$(base32d "${tokens[i+1]}")" "${tokens[i+2]}" "${tokens[i+3]}" "${tokens[i+4]}")"
+    elif [[ $issuer == "${tokens[i]}" ]]; then
+      printf '%s\n' "$(totp "$(base32d "${tokens[i+1]}")" "${tokens[i+2]}" "${tokens[i+3]}" "${tokens[i+4]}")"
+    fi
+  done
+}
+
+case $COMMAND in
+  "add")
+    load_tokens ${@:2}
+    add_token ${@:2}
+    save_tokens ${@:2}
+    ;;
+
+  "get")
+    load_tokens ${@:2}
+    print_tokens ${@:2}
+    ;;
+
+  "help")
+    printf '%s\n' "add issuer, key[, hash[, step[, digits]]] => adds token"
+    printf '%s\n' "get [issuer] => returns token(s)"
+    ;;
+
+  *)
+    echo "Unknown command. Type help to get list of all commands."
+    ;;
+esac
