@@ -286,6 +286,27 @@ add_token() {
   tokens+=( "$issuer" "$secret" "$hash" "$period" "$digits" )
 }
 
+remove_token() {
+  issuer=$1
+
+  if [ -z "${issuer}" ]; then
+      echo "issuer is unset or set to the empty string"
+      exit -1
+  fi
+
+  index=$(find_token_index $@)
+
+  if [ -n "${index}" ]; then
+    unset tokens[$index]
+    unset tokens[$index+1]
+    unset tokens[$index+2]
+    unset tokens[$index+3]
+    unset tokens[$index+4]
+    
+    tokens=( "${tokens[@]}" )
+  fi
+}
+
 load_tokens() {
   if [ -e $savefile ]; then
     read -r -p 'Ciphertext(HEX): ' txt < "$savefile" 
@@ -318,10 +339,26 @@ print_tokens() {
   done
 }
 
+find_token_index() {
+  issuer=$1
+
+  for ((i = 0; i < ${#tokens[@]}; i += 5)); do
+    if [[ $issuer == "${tokens[i]}" ]]; then
+      echo $i
+    fi
+  done
+}
+
 case $COMMAND in
   "add")
     load_tokens ${@:2}
     add_token ${@:2}
+    save_tokens ${@:2}
+    ;;
+
+  "remove")
+    load_tokens ${@:2}
+    remove_token ${@:2}
     save_tokens ${@:2}
     ;;
 
@@ -332,6 +369,7 @@ case $COMMAND in
 
   "help")
     printf '%s\n' "add issuer, key[, hash[, step[, digits]]] => adds token"
+    printf '%s\n' "remove issuer => removes token by issuer"
     printf '%s\n' "get [issuer] => returns token(s)"
     ;;
 
