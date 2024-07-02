@@ -5,12 +5,6 @@
 # inspried by Scott Nicholas bash-totp
 # see https://github.com/neutronscott/bash-totp
 
-COMMAND=$1
-
-savefile="tokens.save"
-
-tokens=()
-
 # bash3 compat
 if (( ${BASH_VERSINFO[0]} < 4 )); then
   toupper() { echo "$1" | tr '[:lower:]' '[:upper:]'; }
@@ -209,9 +203,8 @@ sha1() {
 #   step: usually 30 seconds
 # digits: 6 (default) or 8
 totp() {
-  local key=$1 hash=$2 step=${3:- 30} digits=${4:- 6} time
+  local key=$1 hash=$2 step=${3:- 30} digits=${4:- 6}
 
-  time=$(epoch)
   printf -v step '%016X' "$((time / step))"
   case $hash in
     sha512) dgst=$(hmac_sha512 "$key" "$step") ;;
@@ -349,6 +342,20 @@ find_token_index() {
   done
 }
 
+tokens=()
+savefile="tokens.save"
+time=$(epoch)
+
+while getopts :t: opt; do
+  case $opt in
+    t) time=$OPTARG ;;
+  esac
+done
+
+shift "$(( OPTIND - 1 ))"
+
+COMMAND=$1
+
 case $COMMAND in
   "add")
     load_tokens ${@:2}
@@ -367,10 +374,19 @@ case $COMMAND in
     print_tokens ${@:2}
     ;;
 
+  "date")
+    set_date ${@:2}
+    get_date ${@:2}
+    ;;
+
   "help")
+    printf '%s\n' "Commands:"
     printf '%s\n' "add issuer, key[, hash[, step[, digits]]] => adds token"
     printf '%s\n' "remove issuer => removes token by issuer"
-    printf '%s\n' "get [issuer] => returns token(s)"
+    printf '%s\n' "get [issuer[, time]] => returns token(s)"
+    printf '%s\n' ""
+    printf '%s\n' "Options:"
+    printf '%s\n' "-t => timestamp to calculate TOTP"
     ;;
 
   *)
