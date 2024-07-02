@@ -374,11 +374,6 @@ case $COMMAND in
     print_tokens ${@:2}
     ;;
 
-  "date")
-    set_date ${@:2}
-    get_date ${@:2}
-    ;;
-
   "help")
     printf '%s\n' "Commands:"
     printf '%s\n' "add issuer, key[, hash[, step[, digits]]] => adds token"
