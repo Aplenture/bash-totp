@@ -17,9 +17,17 @@ Adds a new token. Arguments:
 - step (optional, default: 30): timeframe of valid passwords in seconds
 - digits (opitonal, default: 6): number of digits of generated passwords
 
+### remove
+Removes a token by issuer. Arguments:
+- issuer (required): issuer of token to remove
+
 ### get
 Returns the current passwords of tokens. When issuer is set, tokens are filterd by it. Arguments:
 - issuer (optional): filters tokens by issuer
+
+## Options
+### -t
+Alternative unix timestamp for TOTP calculation.
 
 ## Supported Hash algorithm
 - sha1

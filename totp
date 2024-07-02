@@ -386,7 +386,7 @@ case $COMMAND in
     printf '%s\n' "get [issuer[, time]] => returns token(s)"
     printf '%s\n' ""
     printf '%s\n' "Options:"
-    printf '%s\n' "-t => timestamp to calculate TOTP"
+    printf '%s\n' "-t => alternative timestamp for TOTP calculation"
     ;;
 
   *)
