@@ -1,0 +1,3 @@
+#!/bin/bash
+
+ssh totp@zero.local -- "-t $(printf '%(%s)T' -1) $@"
